@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <title>Project Black Book</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        :root {
+            --bg-deep: rgba(5, 5, 5, 0.92);
+            --border-light: rgba(255, 255, 255, 0.05);
+            --text-gray: rgba(255, 255, 255, 0.7);
+            --accent: #ffbf17;
+        }
+
+        body { margin:0; padding:0; background: #000; font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+        #map { width:100vw; height:100vh; background:#000; }
+
+        /* Leaflet Controls */
+        .leaflet-control-zoom { border: 1px solid var(--border-light) !important; border-radius: 8px !important; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important; }
+        .leaflet-control-zoom a { background: var(--bg-deep) !important; color: #fff !important; border-color: rgba(255,255,255,0.1) !important; }
+        .leaflet-control-zoom a:hover { background: rgba(255,255,255,0.1) !important; color: var(--accent) !important; }
+
+        /* Logos et Boutons fixes */
+        #bottom-left-panel {
+            position: fixed; bottom: 20px; left: 20px; z-index: 10000;
+            display: flex; align-items: center; gap: 20px; pointer-events: none;
+        }
+        #logo { width: 100px; height: auto; filter: drop-shadow(0px 4px 10px rgba(0,0,0,0.5)); }
+        
+        #info-btn {
+            width: 35px; height: 35px; pointer-events: auto;
+            background: var(--bg-deep); backdrop-filter: blur(8px);
+            border: 1px solid var(--border-light); border-radius: 50%;
+            color: #fff; font-family: 'serif'; font-style: italic; font-weight: bold; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        #info-btn:hover { background: var(--accent); color: #000; transform: scale(1.1); }
+
+        #coords {
+            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+            background: var(--bg-deep); backdrop-filter: blur(8px);
+            color: #fff; padding: 8px 16px; border-radius: 8px;
+            font-size: 13px; z-index: 9999; pointer-events: none; border: 1px solid var(--border-light);
+        }
+
+        /* Centre de commande (Top Right) */
+        #command-center {
+            position: fixed; top: 20px; right: 20px; z-index: 10001;
+            width: 300px; display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+        }
+        #command-center > * { pointer-events: auto; }
+
+        #filters-panel {
+            background: var(--bg-deep); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--border-light); border-radius: 14px; padding: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column; gap: 10px;
+        }
+        .filter-header { font-size: 11px; color: var(--text-gray); text-transform: uppercase; font-weight: 700; letter-spacing: 1px; padding-left: 4px;}
+        
+        .filters-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .poi-chip {
+            display: flex; align-items: center; justify-content: flex-start; gap: 8px; 
+            padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid transparent;
+            color: var(--text-gray); font-size: 13px; font-weight: 500; line-height: 1; 
+            cursor: pointer; user-select: none; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .poi-chip span { transform: translateY(-1px); } 
+        .poi-chip:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+        .poi-chip.active { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); color: #fff; }
+        .poi-chip:not(.active) { opacity: 0.5; filter: grayscale(1); }
+        .poi-chip img { height: 18px; width: auto; flex-shrink: 0; filter: brightness(2); object-fit: contain; }
+
+        .pbb-toggle-btn {
+            display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px;
+            border-radius: 8px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1;
+            cursor: pointer; transition: 0.3s; user-select: none;
+            background: rgba(255, 51, 51, 0.1); border: 1px solid rgba(255, 51, 51, 0.3); color: #ff3333;
+        }
+        .pbb-toggle-btn .indicator { width: 8px; height: 8px; border-radius: 50%; background: #ff3333; transition: 0.3s; box-shadow: 0 0 8px #ff3333;}
+        .pbb-toggle-btn span:last-child { transform: translateY(-1px); } 
+        .pbb-toggle-btn:hover { background: rgba(255, 51, 51, 0.2); }
+        .pbb-toggle-btn.active-pbb { background: #ff3333; color: #fff; }
+        .pbb-toggle-btn.active-pbb .indicator { background: #fff; box-shadow: 0 0 8px #fff; }
+
+        #search-container { position: relative; width: 100%; }
+        #search-input {
+            width: 100%; padding: 12px 16px; border-radius: 12px; 
+            background: var(--bg-deep); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--border-light); color: #fff; font-family: 'Inter', sans-serif; font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5); transition: 0.3s; box-sizing: border-box; outline: none;
+        }
+        #search-input::placeholder { color: rgba(255,255,255,0.4); }
+        #search-input:focus { border-color: var(--accent); }
+        
+        #search-results {
+            position: absolute; top: calc(100% + 8px); left: 0; width: 100%;
+            background: var(--bg-deep); backdrop-filter: blur(15px); border-radius: 12px; border: 1px solid var(--border-light);
+            max-height: 300px; overflow-y: auto; display: none; flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8); box-sizing: border-box; z-index: 10002;
+        }
+        .search-item { padding: 12px 18px; color: var(--text-gray); font-size: 14px; cursor: pointer; transition: 0.2s; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; }
+        .search-item:last-child { border-bottom: none; }
+        .search-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .search-item-type { font-size: 11px; color: var(--accent); font-weight: bold; text-transform: uppercase; }
+
+        /* Information Modal */
+        #info-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 10006; backdrop-filter: blur(4px); }
+        #info-content { background: var(--bg-deep); border: 1px solid var(--border-light); padding: 30px; border-radius: 16px; max-width: 500px; width: 90%; color: #fff; position: relative; box-shadow: 0 20px 40px rgba(0,0,0,0.8); }
+        #info-content h2 { color: var(--accent); margin-top: 0; font-size: 22px; letter-spacing: -0.5px; }
+        #info-content p { font-size: 14px; line-height: 1.6; color: var(--text-gray); text-align: justify; }
+        #close-modal { margin-top: 20px; padding: 10px 20px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); color: #fff; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        #close-modal:hover { background: rgba(255,255,255,0.1); }
+
+        /* Panneau latéral (Sidebar) */
+        #sidebar {
+            position: fixed; top: 0; left: 0; width: 450px; max-width: 100vw; height: 100vh;
+            background: rgba(10, 10, 10, 0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-right: 4px solid var(--border-light); z-index: 10005; transform: translateX(-100%);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); overflow-y: auto; overflow-x: hidden; color: #fff; box-shadow: 15px 0 40px rgba(0,0,0,0.8); display: flex; flex-direction: column;
+        }
+        #sidebar.active { transform: translateX(0); }
+        #sidebar-close { position: absolute; top: 15px; right: 15px; width: 35px; height: 35px; background: rgba(0,0,0,0.6); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 24px; font-weight: bold; z-index: 10; border: 1px solid rgba(255,255,255,0.1); transition: all 0.2s; }
+        #sidebar-close:hover { background: #fff; color: #000; transform: scale(1.1); }
+        
+        #sidebar-header { width: 100%; min-height: 80px; position: relative; background: #111; }
+        #sidebar-header img.cover { width: 100%; height: 250px; object-fit: cover; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        
+        .sidebar-badge {
+            position: absolute; top: 15px; left: 15px; z-index: 5;
+            width: 40px; height: 40px; background: var(--bg-deep);
+            border: 1px solid var(--border-light); border-radius: 10px;
+            padding: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+            display: flex; align-items: center; justify-content: center;
+            backdrop-filter: blur(8px);
+        }
+        .sidebar-badge img { width: 100% !important; height: 100% !important; object-fit: contain !important; border: none !important; }
+
+        #sidebar-content { padding: 30px; flex-grow: 1; }
+        #sidebar-content h1 { margin: 0 0 5px 0; font-size: 32px; font-weight: 800; letter-spacing: -1px; }
+        #sidebar-content .meta { color: var(--accent); font-size: 13px; text-transform: uppercase; font-weight: 700; margin-bottom: 20px; letter-spacing: 1.5px;}
+        #sidebar-content .desc { font-size: 15px; line-height: 1.7; color: var(--text-gray); text-align: justify; margin-bottom: 25px; }
+        .sidebar-stats { display: flex; justify-content: flex-start; gap: 20px; background: rgba(255, 255, 255, 0.03); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 25px; }
+        .stat-item { display: flex; flex-direction: column; }
+        .stat-label { font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .stat-value { font-size: 18px; font-weight: 800; }
+        .contact-list { display: flex; flex-direction: column; gap: 12px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+        .contact-item { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #fff; text-decoration: none; font-weight: 500; transition: color 0.2s; }
+        .contact-item:hover { color: var(--accent); }
+        .contact-item img { width: 16px; height: 16px; filter: invert(1); opacity: 0.6; }
+
+        /* Map Layers Styles */
+        .poi-wrapper { display:flex; align-items:center; }
+        .poi-text { margin-left: 8px; font-family: 'Arial', sans-serif; font-weight: 700; font-size: 14px; white-space: nowrap; opacity: 0; transition: opacity 0.3s ease; text-shadow: -1.5px -1.5px 0 rgba(0,0,0,0.8), 1.5px -1.5px 0 rgba(0,0,0,0.8), -1.5px 1.5px 0 rgba(0,0,0,0.8), 1.5px 1.5px 0 rgba(0,0,0,0.8); pointer-events: none; }
+        .poi-text.visible { opacity:1; pointer-events:auto; }
+        .poi-icon { width:24px; height:24px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+
+        .city-label { background: none !important; border: none !important; box-shadow: none !important; pointer-events: none !important; display: flex; justify-content: center; align-items: center; }
+        .city-label-text { font-family: Arial, sans-serif; font-weight: 600; font-size: 14px; color: #ffffff; text-align: center; white-space: nowrap; letter-spacing: 1px; text-shadow: -2px -2px 0px rgba(0,0,0,0.8), 2px -2px 0px rgba(0,0,0,0.8), -2px 2px 0px rgba(0,0,0,0.8), 2px 2px 0px rgba(0,0,0,0.8), 0px 0px 12px rgba(0,0,0,1); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: auto !important; display: inline-block; padding: 4px 8px; }
+
+        .leaflet-zone-label { background: none !important; border: none !important; box-shadow: none !important; }
+        .zone-label-content { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; pointer-events: none; text-align: center; transition: transform 0.3s ease, opacity 0.3s ease; transform-origin: center center; }
+        .zone-label-icon { height: 40px; width: auto; object-fit: contain; margin-bottom: 4px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6)); }
+        .zone-label-text { font-family: 'Arial', sans-serif; font-weight: 700; font-size: 14px; white-space: nowrap; transition: opacity 0.3s ease; color: #fff; text-shadow: -1.5px -1.5px 0 rgba(0,0,0,0.8), 1.5px -1.5px 0 rgba(0,0,0,0.8), -1.5px 1.5px 0 rgba(0,0,0,0.8), 1.5px 1.5px 0 rgba(0,0,0,0.8); }
+        
+        /* Ajustement du style des labels pour la grille 40x40 */
+        .grid-label { 
+            color: rgba(255, 255, 255, 0.15); /* Plus transparent */
+            font-family: 'Inter', 'Arial', monospace; 
+            font-weight: 600; 
+            font-size: 9px; /* Plus petit */
+            letter-spacing: 0.5px; 
+            pointer-events: none; 
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.9); 
+        }
+    </style>
+</head>
+<body>
+
+<div id="coords">Clique sur la carte</div>
+<div id="map"></div>
+
+<div id="bottom-left-panel">
+    <img src="icons/pbblogo.png" id="logo" alt="Logo" />
+    <div id="info-btn">i</div>
+</div>
+
+<div id="command-center">
+    <div id="filters-panel">
+        <div class="filter-header">Filtres de carte</div>
+        <div class="filters-grid">
+            <div class="poi-chip active" data-category="poinote"><img src="icons/restaurant.png"> <span>Points</span></div>
+            <div class="poi-chip active" data-category="mafia"><img src="icons/dollar.png"> <span>Orgas</span></div>
+            <div class="poi-chip active" data-category="gang"><img src="icons/drop.png"> <span>Gangs</span></div>
+            <div class="poi-chip active" data-category="mc"><img src="icons/percent.png"> <span>MCs</span></div>
+        </div>
+        <div class="pbb-toggle-btn" id="pbb-toggle">
+            <span class="indicator"></span>
+            <span>Quadrillage PBB</span>
+        </div>
+    </div>
+
+    <div id="search-container">
+        <input type="text" id="search-input" placeholder="Rechercher (ex: LSPD)..." autocomplete="off">
+        <div id="search-results"></div>
+    </div>
+</div>
+
+<div id="sidebar">
+    <div id="sidebar-close">&times;</div>
+    <div id="sidebar-header"></div>
+    <div id="sidebar-content"></div>
+</div>
+
+<div id="info-modal">
+    <div id="info-content">
+        <h2>PROJECT BLACK BOOK</h2>
+        <p>
+            Le Project Black Book est porté par la fondation (nom). Les informations sont documentées, transmises, et ajoutées par une équipe de volontaires bénévoles. <br><br>
+            L'indice de perception PBB (connu sous le nom de "PBB Index") est considéré et assigné par les membres du Project Black Book sur une sélection de critères. La valeur n'a pas de valeur officielle et reflète le ressenti de la population locale.
+        </p>
+        <button id="close-modal">Fermer</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const infoBtn = document.getElementById('info-btn');
+const infoModal = document.getElementById('info-modal');
+const closeModal = document.getElementById('close-modal');
+
+infoBtn.onclick = () => infoModal.style.display = 'flex';
+closeModal.onclick = () => infoModal.style.display = 'none';
+window.onclick = (event) => { if (event.target == infoModal) infoModal.style.display = 'none'; }
+
+const sidebar = document.getElementById('sidebar');
+const sidebarClose = document.getElementById('sidebar-close');
+const sidebarHeader = document.getElementById('sidebar-header');
+const sidebarContent = document.getElementById('sidebar-content');
+
+let selectedMarker = null;
+
+function closeSidebarAndDeselect() {
+    sidebar.classList.remove('active');
+    if (selectedMarker) {
+        const label = selectedMarker.getElement()?.querySelector('.poi-text');
+        if (label && map.getZoom() < zoomInitial + 0.8) {
+            label.classList.remove('visible');
+        }
+        selectedMarker = null;
+    }
+}
+
+sidebarClose.onclick = closeSidebarAndDeselect;
+
+function openSidebar(data) {
+    sidebar.style.borderRightColor = data.color || 'var(--border-light)';
+    
+    let headerHtml = '';
+    if (data.image) {
+        headerHtml += `<img src="${data.image}" class="cover">`;
+    }
+    if (data.iconBadge && data.iconBadge !== "icons/" && data.iconBadge.trim() !== "") {
+        headerHtml += `<div class="sidebar-badge"><img src="${data.iconBadge}" onerror="this.style.display='none'"></div>`;
+    }
+    sidebarHeader.innerHTML = headerHtml;
+    
+    let html = `<h1>${data.title}</h1>`;
+    if(data.categoryText) html += `<div class="meta" style="color:${data.color || 'var(--accent)'}">${data.categoryText}</div>`;
+    if(data.info) html += `<div class="desc">${data.info}</div>`;
+    
+    if (data.surete) {
+        html += `<div class="sidebar-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">PBB INDEX</span>
+                        <span class="stat-value" style="color:${data.colorSurete || '#fff'}">${data.surete}</span>
+                    </div>
+                 </div>`;
+    }
+
+    if (data.phone || data.website) {
+        html += `<div class="contact-list">`;
+        if (data.phone) html += `<div class="contact-item"><img src="icons/phone.png" onerror="this.style.display='none'"> ${data.phone}</div>`;
+        if (data.website) html += `<a href="${data.website}" target="_blank" class="contact-item"><img src="icons/web.png" onerror="this.style.display='none'"> Accéder au site officiel</a>`;
+        html += `</div>`;
+    }
+
+    sidebarContent.innerHTML = html;
+    sidebar.classList.add('active');
+}
+
+const largeur = 3500, hauteur = 3500;
+const limites = [[0, 0], [hauteur, largeur]];
+
+const map = L.map('map', {
+    crs: L.CRS.Simple,
+    attributionControl: false,
+    zoomSnap: 0.1,
+    zoomControl: false,
+    bounceAtZoomLimits: false
+});
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+const imageOverlay = L.imageOverlay('map.png', limites).addTo(map);
+
+let zoomInitial = 0;
+function resetView() {
+    const zoomRemplissage = map.getBoundsZoom(limites, true);
+    map.setView([hauteur / 2, largeur / 2], zoomRemplissage);
+    map.setMinZoom(zoomRemplissage);
+    map.setMaxZoom(zoomRemplissage + 3);
+    map.setMaxBounds(limites);
+    zoomInitial = zoomRemplissage;
+}
+
+resetView();
+window.addEventListener('resize', () => { map.setMaxBounds(null); resetView(); });
+setTimeout(() => { map.invalidateSize(); }, 500);
+
+const coordsDiv = document.getElementById('coords');
+
+map.on('click', e => {
+    const x = Math.round(e.latlng.lng), y = Math.round(e.latlng.lat);
+    navigator.clipboard.writeText(`${x},${y},`).then(() => {
+        coordsDiv.textContent = `X : ${x} | Y : ${y} (copié !)`;
+    }).catch(() => {
+        coordsDiv.textContent = `X : ${x} | Y : ${y} (Erreur copie)`;
+    });
+    setTimeout(() => { coordsDiv.textContent = `X : ${x} | Y : ${y}`; }, 1500);
+    
+    closeSidebarAndDeselect();
+    document.getElementById('search-results').style.display = 'none';
+});
+
+map.on('mousemove', e => {
+    coordsDiv.textContent = `X : ${Math.round(e.latlng.lng)} | Y : ${Math.round(e.latlng.lat)}`;
+});
+
+// --- GENERATION DU QUADRILLAGE PBB ULTRA PRECISION (40x40) ---
+const gridGroup = L.layerGroup();
+const gridCells = {}; 
+const rows = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','AA','AB','AC','AD','AE','AF','AG','AH','AI','AJ','AK','AL','AM','AN'];
+const numCols = 40;
+const cellSize = 87.5; // 3500 / 40
+
+for(let r=0; r<rows.length; r++) {
+    for(let c=0; c<numCols; c++) {
+        const cellId = rows[r] + (c + 1);
+        const xMin = c * cellSize;
+        const xMax = (c + 1) * cellSize;
+        const yMax = 3500 - (r * cellSize);
+        const yMin = 3500 - ((r + 1) * cellSize);
+
+        const bounds = [[yMin, xMin], [yMax, xMax]];
+        
+        const rect = L.rectangle(bounds, {
+            color: 'rgba(255, 255, 255, 0.05)',
+            weight: 1,
+            dashArray: '2 2', // Pointillés plus serrés
+            fillColor: 'transparent',
+            fillOpacity: 0.15,
+            interactive: false
+        });
+
+        const labelMarker = L.marker([yMax, xMin], {
+            icon: L.divIcon({ 
+                className: 'grid-label', 
+                html: cellId, 
+                iconSize: [30, 15], 
+                iconAnchor: [-4, -4]
+            }),
+            interactive: false
+        });
+
+        gridGroup.addLayer(rect);
+        gridGroup.addLayer(labelMarker);
+        
+        gridCells[cellId] = { rect: rect, label: labelMarker };
+    }
+}
+
+function definirDangerSecteur(secteur, niveau) {
+    if(!gridCells[secteur]) return;
+    
+    let couleur = 'transparent';
+    if(niveau === 'ROUGE') couleur = '#ff3333';
+    else if(niveau === 'ORANGE') couleur = '#ffbf17';
+    else if(niveau === 'VERT') couleur = '#00cc44';
+
+    gridCells[secteur].rect.setStyle({ 
+        color: couleur, 
+        weight: 1.5, 
+        dashArray: '', 
+        fillColor: couleur,
+        fillOpacity: 0.15 
+    });
+    
+    const newIcon = L.divIcon({
+        className: 'grid-label',
+        html: `<span style="color: ${couleur}; font-weight: bold; text-shadow: 0 0 6px ${couleur}; opacity: 0.8;">${secteur}</span>`,
+        iconSize: [30, 15],
+        iconAnchor: [-4, -4]
+    });
+    gridCells[secteur].label.setIcon(newIcon);
+}
+
+const allEntitiesWithCategory = []; 
+const searchableEntities = [];
+
+function ajouterPOI(x, y, texte, iconImg, couleur='#000', popupData=null, category='') {
+    const icon = L.divIcon({
+        className: 'poi-wrapper',
+        html: `<img src="${iconImg}" class="poi-icon" onerror="this.style.display='none'"/><span class="poi-text" style="color:${couleur}">${texte}</span>`,
+        iconSize: [24, 24], iconAnchor: [12, 12]
+    });
+    const marker = L.marker([y, x], { icon }).addTo(map);
+    
+    const updateVisibility = () => {
+        const label = marker.getElement()?.querySelector('.poi-text');
+        if (!label) return;
+        label.classList.toggle('visible', (selectedMarker === marker || map.getZoom() >= zoomInitial + 0.8));
+    };
+    
+    marker.on('click', (e) => { 
+        L.DomEvent.stopPropagation(e);
+        if (selectedMarker && selectedMarker !== marker) {
+            const oldLabel = selectedMarker.getElement()?.querySelector('.poi-text');
+            if (oldLabel && map.getZoom() < zoomInitial + 0.8) oldLabel.classList.remove('visible');
+        }
+
+        selectedMarker = marker; 
+        updateVisibility(); 
+        if (popupData) {
+            openSidebar({
+                title: popupData.title || texte,
+                categoryText: 'Point d\'intérêt',
+                info: popupData.info,
+                image: popupData.image,
+                iconBadge: iconImg, 
+                phone: popupData.phone,
+                website: popupData.website,
+                color: couleur
+            });
+        }
+    });
+
+    map.on('zoomend', updateVisibility);
+    updateVisibility();
+    allEntitiesWithCategory.push({ layer: marker, category });
+    
+    searchableEntities.push({
+        title: popupData ? (popupData.title || texte) : texte,
+        type: 'Point d\'intérêt',
+        latlng: L.latLng([y, x]),
+        clickTarget: marker
+    });
+}
+
+function ajouterLieu(x, y, nom, details = null) {
+    const icon = L.divIcon({ className: 'city-label', html: `<div class="city-label-text">${nom}</div>`, iconSize: [200, 30], iconAnchor: [100, 15] });
+    const marker = L.marker([y, x], { icon: icon, zIndexOffset: 1000 }).addTo(map);
+    
+    if (details) {
+        marker.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            openSidebar({
+                title: nom,
+                categoryText: 'Quartier',
+                info: details.description,
+                image: details.image,
+                surete: details.surete,
+                colorSurete: details.colorSurete,
+                color: details.colorSurete
+            });
+        });
+    }
+
+    const updateOpacity = () => { const el = marker.getElement(); if (el) el.style.opacity = (map.getZoom() < zoomInitial + 0.5) ? "0.6" : "1"; };
+    map.on('zoomend', updateOpacity); updateOpacity();
+    
+    searchableEntities.push({
+        title: nom,
+        type: 'Quartier',
+        latlng: L.latLng([y, x]),
+        clickTarget: marker
+    });
+}
+
+function ajouterZone(coordonnees, couleur, nom, description, image, category = '', zoneIcon = '', pbbColor = null) {
+    const coordsCorrigees = coordonnees.map(point => [point[1], point[0]]);
+    const zone = L.polygon(coordsCorrigees, { color: couleur, fillColor: couleur, fillOpacity: 0.45, weight: 2 }).addTo(map);
+
+    zone.originalColor = couleur;
+    zone.pbbColor = pbbColor || couleur;
+
+    let catName = 'Organisation';
+    if (category === 'gang') catName = 'Gang Local';
+    if (category === 'mc') catName = 'Motorcycle Club';
+
+    zone.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        openSidebar({
+            title: nom,
+            categoryText: catName,
+            info: description,
+            image: image,
+            iconBadge: zoneIcon, 
+            color: isPbbView ? zone.pbbColor : couleur
+        });
+    });
+
+    let centerMarker = null;
+    if (nom) {
+        const hasValidIcon = zoneIcon && zoneIcon !== "icons/" && zoneIcon.trim() !== "";
+        const imgHtml = hasValidIcon ? `<img src="${zoneIcon}" class="zone-label-icon" onerror="this.style.display='none'">` : '';
+
+        const labelIcon = L.divIcon({
+            className: 'leaflet-zone-label',
+            html: `<div class="zone-label-content">
+                       ${imgHtml}<div class="zone-label-text">${nom}</div>
+                   </div>`,
+            iconSize: [250, 90], iconAnchor: [125, 45] 
+        });
+        
+        centerMarker = L.marker(zone.getBounds().getCenter(), { icon: labelIcon, interactive: true }).addTo(map);
+
+        centerMarker.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            zone.fire('click');
+        });
+
+        const updateText = () => {
+            const z = map.getZoom();
+            const contentEl = centerMarker.getElement()?.querySelector('.zone-label-content');
+            const textEl = centerMarker.getElement()?.querySelector('.zone-label-text');
+            
+            if (!contentEl) return;
+            let diff = z - zoomInitial;
+            
+            if (diff < 0.4) {
+                contentEl.style.opacity = "0.5"; contentEl.style.transform = "scale(0.5)";
+                if (textEl) textEl.style.opacity = "0";
+            } else if (diff < 1.0) {
+                contentEl.style.opacity = "0.7"; contentEl.style.transform = "scale(0.7)";
+                if (textEl) textEl.style.opacity = "0";
+            } else if (diff < 1.5) {
+                contentEl.style.opacity = "0.9"; contentEl.style.transform = "scale(0.85)";
+                if (textEl) textEl.style.opacity = "1";
+            } else {
+                contentEl.style.opacity = "1"; contentEl.style.transform = "scale(1)";
+                if (textEl) textEl.style.opacity = "1";
+            }
+        };
+        map.on('zoomend', updateText);
+        setTimeout(updateText, 100);
+        
+        searchableEntities.push({
+            title: nom,
+            type: catName,
+            latlng: zone.getBounds().getCenter(),
+            clickTarget: zone
+        });
+    }
+    allEntitiesWithCategory.push({ layer: zone, label: centerMarker, category });
+}
+
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+
+searchInput.addEventListener('input', (e) => {
+    const val = e.target.value.toLowerCase();
+    searchResults.innerHTML = '';
+    
+    if (!val) {
+        searchResults.style.display = 'none';
+        return;
+    }
+    
+    const filtered = searchableEntities.filter(ent => ent.title && ent.title.toLowerCase().includes(val));
+    
+    if (filtered.length > 0) {
+        searchResults.style.display = 'flex';
+        filtered.forEach(ent => {
+            const div = document.createElement('div');
+            div.className = 'search-item';
+            div.innerHTML = `<span>${ent.title}</span><span class="search-item-type">${ent.type}</span>`;
+            div.onclick = () => {
+                searchInput.value = '';
+                searchResults.style.display = 'none';
+                map.flyTo(ent.latlng, zoomInitial + 1.2, { duration: 1 });
+                setTimeout(() => { ent.clickTarget.fire('click'); }, 1000);
+            };
+            searchResults.appendChild(div);
+        });
+    } else {
+        searchResults.style.display = 'none';
+    }
+});
+
+let isPbbView = false;
+const pbbToggle = document.getElementById('pbb-toggle');
+
+pbbToggle.addEventListener('click', () => {
+    isPbbView = !isPbbView;
+    pbbToggle.classList.toggle('active-pbb', isPbbView);
+    
+    if (isPbbView) {
+        map.addLayer(gridGroup);
+        allEntitiesWithCategory.forEach(item => {
+            if (item.layer instanceof L.Polygon) {
+                item.layer.setStyle({ fillOpacity: 0.05, opacity: 0.2 });
+            }
+        });
+    } else {
+        map.removeLayer(gridGroup);
+        allEntitiesWithCategory.forEach(item => {
+            if (item.layer instanceof L.Polygon) {
+                item.layer.setStyle({ fillOpacity: 0.45, opacity: 1 });
+            }
+        });
+    }
+});
+
+const activeCategories = new Set(['poinote', 'mafia', 'gang', 'mc']);
+document.querySelectorAll('.poi-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        const cat = chip.dataset.category;
+        activeCategories.has(cat) ? activeCategories.delete(cat) : activeCategories.add(cat);
+        chip.classList.toggle('active');
+        allEntitiesWithCategory.forEach(item => {
+            if (item.category === cat) {
+                if (activeCategories.has(item.category)) {
+                    item.layer.addTo(map); if (item.label) item.label.addTo(map);
+                } else {
+                    map.removeLayer(item.layer); if (item.label) map.removeLayer(item.label);
+                }
+            }
+        });
+        
+        map.fire('zoomend');
+    });
+});
+
+ajouterPOI(2663,772, 'LSPD HQ', 'icons/lspd.png', '#fff', { title: 'LSPD HQ', info: 'Quartiers généraux du département de police de Los Santos.', image: 'images/lspd.png' }, 'poinote');
+ajouterPOI(2484,1015, 'LSFD Station', 'icons/lsfd.png', '#fff', { title: 'LSFD Station', info: 'Station du département de lutte contre les incendies.', image: 'images/lsfd.png' }, 'poinote');
+ajouterPOI(2615,704, 'Mairie de Los Santos', 'icons/lscity.png', '#fff', { title: 'Mairie de Los Santos', info: 'Coeur administratif et politique de la Ville de Los Santos. Le maire en poste est Cole Marinelli.', image: 'images/cityhall.png' }, 'poinote');
+ajouterPOI(2528,699, 'Synagogue de Los Santos', 'icons/david.png', '#fff', { title: 'Synagogue de Los Santos', info: 'Synagogue possiblement fréquentée par des membres de la Yiddish Connection.', image: 'images/yiddish.png' }, 'poinote');
+
+ajouterLieu(2941,775, "Idlewood", { description: "Quartier niché au sud de la butte de Jefferson. Réputé pour ses divers mouvements, organisations criminelles, et crackheads. Plaque tournante du trafic de drogue. Entrée accompagnée recommandée.", image: "images/idlewood.jpg", surete: "ORANGE", colorSurete: "#ffcc00" });
+
+ajouterZone([[3151,619], [3151,579], [3203,579], [3203,619]], "#a31515", "Chosen Few MC", "Description du club...", "images/chosen.png", "mc", "icons/chosenfew.png");
+ajouterZone([[2808,555], [2892,555], [2892,605], [2808,605]], "#ad27d6", "Gutta Gang", "Description du club...", "images/", "gang", "icons/");
+ajouterZone([[2969,649], [3031,649], [3031,729], [2975,729], [2969,707]], "#000000", "Lazy Lane Wolves", "Description du club...", "images/", "gang", "icons/");
+ajouterZone([[2975,730], [3031,730], [3031,760], [3037,787], [2988,803,], [2986,769]], "#ff002f", "Black P Stone", "Description du club...", "images/", "gang", "icons/");
+ajouterZone([[2898,1010], [2898,972], [2950,972], [2950,1010]], "#000000", "Loaded Hustler Mob", "Description du club...", "images/", "gang", "icons/");
+ajouterZone([[3017,938], [3080,938], [3080,924], [3078,904], [3074,888], [3017,888]], "#db8514", "Palmwood", "Description du club...", "images/", "gang", "icons/");
+ajouterZone([[3119,744], [3119,778], [3161,778], [3161,744]], "#146edb", "Asian Boyz Crips", "Description du club...", "images/", "gang", "icons/");
+ajouterZone([[3099,1071], [3128,1071], [3128,996], [3099,996]], "#14a3db", "Risk Takers 38", "Description du club...", "images/", "gang", "icons/");
+ajouterZone([[3182,1056], [3211,1056], [3211,959], [3182,959]], "#19b56c", "Big Hazard 13", "Description du club...", "images/", "gang", "icons/");
+
+// Exemples sur la grille 40x40.
+// --- Ligne Y ---
+definirDangerSecteur('Y26', 'VERT'); definirDangerSecteur('Y27', 'VERT'); definirDangerSecteur('Y28', 'VERT'); definirDangerSecteur('Y29', 'VERT'); definirDangerSecteur('Y30', 'VERT'); definirDangerSecteur('Y31', 'VERT');
+
+// --- Ligne Z ---
+definirDangerSecteur('Z26', 'VERT'); definirDangerSecteur('Z27', 'VERT'); definirDangerSecteur('Z28', 'VERT'); definirDangerSecteur('Z29', 'VERT'); definirDangerSecteur('Z30', 'VERT'); definirDangerSecteur('Z31', 'VERT');
+
+// --- Ligne AA ---
+definirDangerSecteur('AA25', 'VERT'); definirDangerSecteur('AA26', 'VERT'); definirDangerSecteur('AA27', 'VERT'); definirDangerSecteur('AA28', 'VERT'); definirDangerSecteur('AA29', 'VERT'); definirDangerSecteur('AA30', 'VERT'); definirDangerSecteur('AA31', 'VERT'); definirDangerSecteur('AA32', 'VERT'); definirDangerSecteur('AA33', 'VERT'); definirDangerSecteur('AA34', 'VERT'); definirDangerSecteur('AA35', 'VERT'); definirDangerSecteur('AA36', 'VERT'); definirDangerSecteur('AA37', 'VERT'); definirDangerSecteur('AA38', 'VERT');
+
+// --- Ligne AB ---
+definirDangerSecteur('AB22', 'VERT'); definirDangerSecteur('AB23', 'VERT'); definirDangerSecteur('AB24', 'VERT'); definirDangerSecteur('AB25', 'VERT'); definirDangerSecteur('AB26', 'VERT'); definirDangerSecteur('AB27', 'VERT'); definirDangerSecteur('AB28', 'VERT'); definirDangerSecteur('AB29', 'VERT'); definirDangerSecteur('AB30', 'VERT'); definirDangerSecteur('AB31', 'VERT'); definirDangerSecteur('AB32', 'VERT'); definirDangerSecteur('AB33', 'VERT'); definirDangerSecteur('AB34', 'VERT'); definirDangerSecteur('AB35', 'VERT'); definirDangerSecteur('AB36', 'VERT'); definirDangerSecteur('AB37', 'VERT'); definirDangerSecteur('AB38', 'VERT'); definirDangerSecteur('AB39', 'VERT'); definirDangerSecteur('AB40', 'VERT');
+
+// --- Ligne AC ---
+definirDangerSecteur('AC21', 'VERT'); definirDangerSecteur('AC22', 'VERT'); definirDangerSecteur('AC23', 'VERT'); definirDangerSecteur('AC24', 'VERT'); definirDangerSecteur('AC25', 'VERT'); definirDangerSecteur('AC26', 'VERT'); definirDangerSecteur('AC27', 'VERT'); definirDangerSecteur('AC28', 'VERT'); definirDangerSecteur('AC29', 'VERT'); definirDangerSecteur('AC30', 'VERT'); definirDangerSecteur('AC31', 'VERT'); definirDangerSecteur('AC32', 'VERT'); definirDangerSecteur('AC33', 'VERT'); definirDangerSecteur('AC34', 'VERT'); definirDangerSecteur('AC35', 'VERT'); definirDangerSecteur('AC36', 'VERT'); definirDangerSecteur('AC37', 'VERT'); definirDangerSecteur('AC38', 'VERT'); definirDangerSecteur('AC39', 'VERT'); definirDangerSecteur('AC40', 'VERT');
+
+// --- Ligne AD ---
+definirDangerSecteur('AD21', 'VERT'); definirDangerSecteur('AD22', 'VERT'); definirDangerSecteur('AD23', 'VERT'); definirDangerSecteur('AD24', 'VERT'); definirDangerSecteur('AD25', 'VERT'); definirDangerSecteur('AD26', 'VERT'); definirDangerSecteur('AD27', 'VERT'); definirDangerSecteur('AD28', 'VERT'); definirDangerSecteur('AD29', 'VERT'); definirDangerSecteur('AD30', 'VERT'); definirDangerSecteur('AD31', 'VERT'); definirDangerSecteur('AD32', 'VERT'); definirDangerSecteur('AD33', 'VERT'); definirDangerSecteur('AD34', 'VERT'); definirDangerSecteur('AD35', 'VERT'); definirDangerSecteur('AD36', 'VERT'); definirDangerSecteur('AD37', 'VERT'); definirDangerSecteur('AD38', 'VERT'); definirDangerSecteur('AD39', 'VERT'); definirDangerSecteur('AD40', 'VERT');
+
+// --- Ligne AE ---
+definirDangerSecteur('AE21', 'VERT'); definirDangerSecteur('AE22', 'VERT'); definirDangerSecteur('AE23', 'VERT'); definirDangerSecteur('AE24', 'VERT'); definirDangerSecteur('AE25', 'VERT'); definirDangerSecteur('AE26', 'VERT'); definirDangerSecteur('AE27', 'VERT'); definirDangerSecteur('AE28', 'VERT'); definirDangerSecteur('AE29', 'VERT'); definirDangerSecteur('AE30', 'VERT'); definirDangerSecteur('AE31', 'VERT'); definirDangerSecteur('AE32', 'VERT'); definirDangerSecteur('AE33', 'VERT'); definirDangerSecteur('AE34', 'VERT'); definirDangerSecteur('AE35', 'VERT'); definirDangerSecteur('AE36', 'VERT'); definirDangerSecteur('AE37', 'VERT'); definirDangerSecteur('AE38', 'VERT'); definirDangerSecteur('AE39', 'VERT'); definirDangerSecteur('AE40', 'VERT');
+
+// --- Ligne AF ---
+definirDangerSecteur('AF21', 'VERT'); definirDangerSecteur('AF22', 'VERT'); definirDangerSecteur('AF23', 'VERT'); definirDangerSecteur('AF24', 'VERT'); definirDangerSecteur('AF25', 'VERT'); definirDangerSecteur('AF26', 'VERT'); definirDangerSecteur('AF27', 'VERT'); definirDangerSecteur('AF28', 'VERT'); definirDangerSecteur('AF29', 'VERT'); definirDangerSecteur('AF30', 'VERT'); definirDangerSecteur('AF31', 'VERT'); definirDangerSecteur('AF32', 'VERT'); definirDangerSecteur('AF33', 'VERT'); definirDangerSecteur('AF34', 'VERT'); definirDangerSecteur('AF35', 'VERT'); definirDangerSecteur('AF36', 'VERT'); definirDangerSecteur('AF37', 'VERT'); definirDangerSecteur('AF38', 'VERT'); definirDangerSecteur('AF39', 'VERT'); definirDangerSecteur('AF40', 'VERT');
+
+// --- Ligne AG ---
+definirDangerSecteur('AG21', 'VERT'); definirDangerSecteur('AG22', 'VERT'); definirDangerSecteur('AG23', 'VERT'); definirDangerSecteur('AG24', 'VERT'); definirDangerSecteur('AG25', 'VERT'); definirDangerSecteur('AG26', 'VERT'); definirDangerSecteur('AG27', 'VERT'); definirDangerSecteur('AG28', 'VERT'); definirDangerSecteur('AG29', 'VERT'); definirDangerSecteur('AG30', 'VERT'); definirDangerSecteur('AG31', 'VERT'); definirDangerSecteur('AG32', 'VERT'); definirDangerSecteur('AG33', 'VERT'); definirDangerSecteur('AG34', 'VERT'); definirDangerSecteur('AG35', 'VERT'); definirDangerSecteur('AG36', 'VERT'); definirDangerSecteur('AG37', 'VERT'); definirDangerSecteur('AG38', 'VERT'); definirDangerSecteur('AG39', 'VERT'); definirDangerSecteur('AG40', 'VERT');
+
+// --- Ligne AH ---
+definirDangerSecteur('AH21', 'VERT'); definirDangerSecteur('AH22', 'VERT'); definirDangerSecteur('AH23', 'VERT'); definirDangerSecteur('AH26', 'VERT'); definirDangerSecteur('AH27', 'VERT'); definirDangerSecteur('AH28', 'VERT'); definirDangerSecteur('AH29', 'VERT'); definirDangerSecteur('AH30', 'VERT'); definirDangerSecteur('AH31', 'VERT'); definirDangerSecteur('AH32', 'VERT'); definirDangerSecteur('AH33', 'VERT'); definirDangerSecteur('AH34', 'VERT'); definirDangerSecteur('AH35', 'VERT'); definirDangerSecteur('AH36', 'VERT'); definirDangerSecteur('AH37', 'VERT'); definirDangerSecteur('AH38', 'VERT'); definirDangerSecteur('AH39', 'VERT'); definirDangerSecteur('AH40', 'VERT');
+
+// --- Ligne AI ---
+definirDangerSecteur('AI27', 'VERT'); definirDangerSecteur('AI28', 'VERT'); definirDangerSecteur('AI29', 'VERT'); definirDangerSecteur('AI30', 'VERT'); definirDangerSecteur('AI31', 'VERT'); definirDangerSecteur('AI32', 'VERT'); definirDangerSecteur('AI33', 'VERT'); definirDangerSecteur('AI34', 'VERT'); definirDangerSecteur('AI35', 'VERT'); definirDangerSecteur('AI36', 'VERT'); definirDangerSecteur('AI37', 'VERT'); definirDangerSecteur('AI38', 'VERT'); definirDangerSecteur('AI39', 'VERT'); definirDangerSecteur('AI40', 'VERT');
+
+// --- Ligne AJ ---
+definirDangerSecteur('AJ27', 'VERT'); definirDangerSecteur('AJ28', 'VERT'); definirDangerSecteur('AJ29', 'VERT'); definirDangerSecteur('AJ30', 'VERT'); definirDangerSecteur('AJ31', 'VERT'); definirDangerSecteur('AJ32', 'VERT'); definirDangerSecteur('AJ33', 'VERT'); definirDangerSecteur('AJ34', 'VERT'); definirDangerSecteur('AJ35', 'VERT'); definirDangerSecteur('AJ36', 'VERT'); definirDangerSecteur('AJ37', 'VERT'); definirDangerSecteur('AJ38', 'VERT'); definirDangerSecteur('AJ39', 'VERT'); 
+
+// --- Ligne AK ---
+definirDangerSecteur('AK28', 'VERT'); definirDangerSecteur('AK29', 'VERT'); definirDangerSecteur('AK30', 'VERT'); definirDangerSecteur('AK31', 'VERT'); definirDangerSecteur('AK32', 'VERT'); definirDangerSecteur('AK33', 'VERT'); definirDangerSecteur('AK34', 'VERT'); definirDangerSecteur('AK35', 'VERT'); definirDangerSecteur('AK36', 'VERT'); definirDangerSecteur('AK37', 'VERT'); definirDangerSecteur('AK38', 'VERT'); definirDangerSecteur('AK39', 'VERT'); 
+
+// --- Ligne AL ---
+definirDangerSecteur('AL29', 'VERT'); definirDangerSecteur('AL30', 'VERT'); definirDangerSecteur('AL31', 'VERT'); definirDangerSecteur('AL32', 'VERT'); definirDangerSecteur('AL33', 'VERT'); definirDangerSecteur('AL34', 'VERT'); definirDangerSecteur('AL35', 'VERT'); definirDangerSecteur('AL36', 'VERT'); definirDangerSecteur('AL37', 'VERT'); definirDangerSecteur('AL38', 'VERT'); definirDangerSecteur('AL39', 'VERT');
+
+</script>
+</body>
+</html>
